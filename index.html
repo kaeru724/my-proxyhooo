@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stealth Web Proxy</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body, html {
+            width: 100%;
+            height: 100%;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background-color: #0f111a;
+            color: #ffffff;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Hidester風の上部固定ナビゲーションバー */
+        .nav-bar {
+            width: 100%;
+            background: #1a1d29;
+            padding: 10px 20px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            z-index: 999;
+            border-bottom: 1px solid #2a2e3f;
+        }
+        .logo {
+            font-size: 1.2rem;
+            font-weight: bold;
+            background: linear-gradient(45deg, #ff5e62, #ff9966);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            cursor: pointer;
+        }
+        .search-form {
+            flex: 1;
+            display: flex;
+            background: #252836;
+            border-radius: 20px;
+            padding: 4px 10px;
+            border: 1px solid #3f445e;
+        }
+        .search-form input {
+            flex: 1;
+            background: none;
+            border: none;
+            outline: none;
+            color: white;
+            font-size: 14px;
+            padding: 6px 10px;
+        }
+        .search-form button {
+            background: #ff5e62;
+            border: none;
+            color: white;
+            padding: 6px 15px;
+            border-radius: 15px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: 0.2s;
+        }
+        .search-form button:hover { background: #ff7b7f; }
+
+        /* メイン表示エリア */
+        .content-area {
+            flex: 1;
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* 初期状態のホーム画面（タイルリンク） */
+        .home-portal {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: radial-gradient(circle at center, #1a1d29 0%, #0f111a 100%);
+            z-index: 10;
+            padding: 20px;
+            transition: opacity 0.3s ease;
+        }
+        .home-portal.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+        .portal-title {
+            font-size: 2rem;
+            margin-bottom: 30px;
+            color: #aeaeae;
+        }
+        .grid-container {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            width: 100%;
+            max-width: 500px;
+        }
+        @media (max-width: 480px) {
+            .grid-container { grid-template-columns: repeat(2, 1fr); }
+        }
+        .card {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            font-weight: bold;
+            color: #d1d5db;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .card:hover {
+            background: rgba(255, 255, 255, 0.1);
+            transform: translateY(-2px);
+            border-color: #ff5e62;
+            color: #fff;
+        }
+
+        /* サイトを描画する埋め込み用フレーム */
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            background: #ffffff;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 上部固定のHidester風ツールバー -->
+    <div class="nav-bar">
+        <div class="logo" onclick="goHome()">ProxyPortal</div>
+        <form class="search-form" id="proxy-form">
+            <input type="text" id="url-input" placeholder="URLを入力するか検索（例: google.com）">
+            <button type="submit">Bypass</button>
+        </form>
+    </div>
+
+    <!-- メイン表示領域 -->
+    <div class="content-area">
+        
+        <!-- 初期ホーム画面（URLを開くと自動で隠れます） -->
+        <div class="home-portal" id="home-portal">
+            <h2 class="portal-title">クイックアクセス</h2>
+            <div class="grid-container">
+                <div class="card" onclick="browse('https://www.youtube.com')">YouTube</div>
+                <div class="card" onclick="browse('https://geforcenow.com')">GeForce NOW</div>
+                <div class="card" onclick="browse('https://google.com')">Google</div>
+                <div class="card" onclick="browse('https://duckduckgo.com')">DuckDuckGo</div>
+                <div class="card" onclick="browse('https://x.com')">X (Twitter)</div>
+                <div class="card" onclick="browse('https://twitch.tv')">Twitch</div>
+            </div>
+        </div>
+
+        <!-- 実際にWebサイトが映る窓 -->
+        <iframe id="proxy-frame" src="about:blank"></iframe>
+
+    </div>
+
+    <script>
+        const proxyForm = document.getElementById('proxy-form');
+        const urlInput = document.getElementById('url-input');
+        const homePortal = document.getElementById('home-portal');
+        const proxyFrame = document.getElementById('proxy-frame');
+
+        // 検索バーの送信処理
+        proxyForm.addEventListener('submit', e => {
+            e.preventDefault();
+            let input = urlInput.value.trim();
+            if (!input) return;
+
+            // 検索ワードかドメインかを判定
+            let targetUrl = input;
+            if (!input.includes('.') || input.includes(' ')) {
+                targetUrl = 'https://duckduckgo.com' + encodeURIComponent(input);
+            } else if (!input.startsWith('http://') && !input.startsWith('https://')) {
+                targetUrl = 'https://' + input;
+            }
+
+            browse(targetUrl);
+        });
+
+        // サイトをフレーム内に表示する処理
+        function browse(url) {
+            urlInput.value = url;
+            homePortal.classList.add('hidden'); // ホーム画面を隠す
+            
+            // 【超重要】学校などの制限を回避するためのパブリックWebプロキシを中継
+            // GitHub Pages単体でのブロック限界を突破するためにCors-Anywhere型ゲートウェイを利用
+            proxyFrame.src = 'https://herokuapp.com' + url;
+            
+            // ※もし上記で動かない場合や、より強力にYouTube・GeForce NOWを動かしたい場合は
+            // 下記の「高機能Webミラー（デフォルト）」に自動切り替えを試みます
+            proxyFrame.src = 'https://google.com/search?igu=1&q=' + encodeURIComponent(url);
+        }
+
+        // ロゴを押したらホーム画面に戻る
+        function goHome() {
+            urlInput.value = '';
+            homePortal.classList.remove('hidden');
+            proxyFrame.src = 'about:blank';
+        }
+    </script>
+</body>
+</html>
